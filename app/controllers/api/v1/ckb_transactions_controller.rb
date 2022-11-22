@@ -24,15 +24,45 @@ module Api
         end
       end
 
+      def query
+        @page = params[:page] || 1
+        @page_size = params[:page_size]  || 10
+
+        if params[:address]
+          @address = Address.cached_find(params[:address])
+        end
+
+        ckb_transactions =
+          if @address
+            records_counter = @tx_ids = AccountBook.where(address_id: @address.id).order("ckb_transaction_id" => :desc).select("ckb_transaction_id").page(@page).per(@page_size)
+            CkbTransaction.where(id: @tx_ids.map(&:ckb_transaction_id)).order(id: :desc)
+          else
+            records_counter = RecordCounters::Transactions.new
+            CkbTransaction.recent.normal.page(@page).per(@page_size)
+          end
+        ckb_transactions = ckb_transactions.select(:id, :tx_hash, :block_id, :block_number, :block_timestamp, :is_cellbase, :updated_at)
+        json = Rails.cache.realize(ckb_transactions.cache_key, version: ckb_transactions.cache_version, race_condition_ttl: 3.seconds) do
+
+          options = FastJsonapi::PaginationMetaGenerator.new(request: request, records: ckb_transactions, page: @page, page_size: @page_size, records_counter: records_counter).call
+          CkbTransactionsSerializer.new(ckb_transactions, options.merge(params: { previews: true, address: @address })).serialized_json
+        end
+        render json: json
+      end
+
       def show
         ckb_transaction = CkbTransaction.cached_find(params[:id]) || PoolTransactionEntry.find_by(tx_hash: params[:id])
 
         raise Api::V1::Exceptions::CkbTransactionNotFoundError if ckb_transaction.blank?
 
+        if ckb_transaction.is_a?(PoolTransactionEntry) && ckb_transaction.tx_status.to_s == "rejected" && ckb_transaction.detailed_message.blank?
+          ckb_transaction.update_detailed_message_for_rejected_transaction
+        end
+
         render json: CkbTransactionSerializer.new(ckb_transaction)
       end
 
       private
+
 
       def from_home_page?
         params[:page].blank? || params[:page_size].blank?

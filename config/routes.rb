@@ -20,6 +20,7 @@ Rails.application.routes.draw do
       resources :addresses, only: :show
       get "/transactions/:id", to: "ckb_transactions#show", as: "ckb_transaction"
       get "/transactions", to: "ckb_transactions#index", as: "ckb_transactions"
+      post "/transactions/query", to: "ckb_transactions#query", as: "query_ckb_transactions"
       resources :cell_input_lock_scripts, only: :show
       resources :cell_input_type_scripts, only: :show
       resources :cell_input_data, only: :show
@@ -44,6 +45,10 @@ Rails.application.routes.draw do
       resources :address_udt_transactions, only: :show
       resources :distribution_data, only: :show
       resources :monetary_data, only: :show
+    end
+
+    namespace :v2 do
+      post '/das_accounts' => 'das_accounts#query', as: :das_accounts
     end
   end
   draw "v2"
